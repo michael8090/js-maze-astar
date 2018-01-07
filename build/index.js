@@ -18,6 +18,7 @@ function generateMaze(width, height, unitSize, block) {
             row[j] = {
                 i: i,
                 j: j,
+                id: i + ":" + j,
                 x: i * unitSize,
                 y: j * unitSize,
                 w: unitSize,
@@ -58,35 +59,83 @@ function mapGet(map, obj) {
     }
     return Infinity;
 }
+var MyWeakMap = /** @class */ (function () {
+    function MyWeakMap() {
+        this.id = "weakmap" + MyWeakMap.instanceCount++;
+    }
+    MyWeakMap.prototype.set = function (obj, value) {
+        obj[this.id] = value;
+    };
+    MyWeakMap.prototype.get = function (obj) {
+        return obj[this.id];
+    };
+    MyWeakMap.prototype.has = function (obj) {
+        return obj[this.id] !== undefined;
+    };
+    MyWeakMap.instanceCount = 0;
+    return MyWeakMap;
+}());
+var MySet = /** @class */ (function () {
+    function MySet(getId, arr) {
+        this.getId = getId;
+        this.record = {};
+        this.size = 0;
+        if (arr) {
+            var record_1 = this.record;
+            arr.forEach(function (a, i) { return (record_1[getId(a)] = a); });
+            this.size = Object.keys(record_1).length;
+        }
+    }
+    MySet.prototype.has = function (item) {
+        return !!this.get(item);
+    };
+    MySet.prototype.get = function (item) {
+        return this.record[this.getId(item)];
+    };
+    MySet.prototype.add = function (item) {
+        if (!this.has(item)) {
+            this.size++;
+        }
+        this.record[this.getId(item)] = item;
+    };
+    MySet.prototype.delete = function (item) {
+        if (this.has(item)) {
+            this.size--;
+        }
+        delete this.record[this.getId(item)];
+    };
+    MySet.prototype.values = function () {
+        var record = this.record;
+        return Object.keys(record).map(function (k) { return record[k]; });
+    };
+    return MySet;
+}());
+function buildPath(from, unit) {
+    var path = [unit];
+    while (unit) {
+        var parent_1 = from[unit.id];
+        if (parent_1) {
+            path.push(parent_1);
+        }
+        unit = parent_1;
+    }
+    return path;
+}
+function cost(a, b) {
+    // chebyshev distance
+    return Math.abs(a.x - b.x) + Math.abs(a.y - b.y);
+}
 function getPath(maze, startPoint, targetPoint) {
     // a* here
-    function getId(unit) {
-        return unit.x + ":" + unit.y;
-    }
-    var closedSet = new Set();
-    var openSet = new Set([startPoint]);
-    var from = new Map();
-    var gScore = new WeakMap();
-    var fScore = new WeakMap();
-    function cost(a, b) {
-        // chebyshev distance
-        return Math.abs(a.x - b.x) + Math.abs(a.y - b.y);
-    }
-    function buildPath(unit) {
-        var path = [unit];
-        while (unit) {
-            var parent_1 = from[getId(unit)];
-            if (parent_1) {
-                path.push(parent_1);
-            }
-            unit = parent_1;
-        }
-        return path;
-    }
+    var closedSet = new MySet(function (unit) { return unit.id; });
+    var openSet = new MySet(function (unit) { return unit.id; }, [startPoint]);
+    var from = {};
+    var gScore = new MyWeakMap();
+    var fScore = new MyWeakMap();
     gScore.set(startPoint, 0);
     fScore.set(startPoint, cost(startPoint, targetPoint));
     var _loop_1 = function () {
-        var openUnits = Array.from(openSet.values());
+        var openUnits = openSet.values();
         var current = openUnits[0];
         for (var i_1 = 0, l = openUnits.length; i_1 < l; i_1++) {
             var u = openUnits[i_1];
@@ -95,7 +144,7 @@ function getPath(maze, startPoint, targetPoint) {
             }
         }
         if (current.i === targetPoint.i && current.j === targetPoint.j) {
-            return { value: buildPath(current) };
+            return { value: buildPath(from, current) };
         }
         openSet.delete(current);
         closedSet.add(current);
@@ -124,7 +173,7 @@ function getPath(maze, startPoint, targetPoint) {
             if (tentasiveGScore >= mapGet(gScore, neighbor)) {
                 return;
             }
-            from[getId(neighbor)] = current;
+            from[neighbor.id] = current;
             gScore.set(neighbor, tentasiveGScore);
             fScore.set(neighbor, gScore.get(neighbor) + cost(neighbor, targetPoint));
         });

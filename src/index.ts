@@ -14,7 +14,8 @@ interface MazeUnit {
   h: number;
   i: number;
   j: number;
-  isBlock?: boolean;
+  id: string;
+  isBlock: boolean;
 }
 
 type Maze = MazeUnit[][];
@@ -36,6 +37,7 @@ function generateMaze(
       row[j] = {
         i,
         j,
+        id: i + ":" + j,
         x: i * unitSize,
         y: j * unitSize,
         w: unitSize,
@@ -75,11 +77,81 @@ function drawStartPoint(ctx: CanvasRenderingContext2D, startPoint: MazeUnit) {
   drawUnit(ctx, startPoint, "#0000ff");
 }
 
-function mapGet(map: WeakMap<any, any>, obj: any) {
+function mapGet(map: MyWeakMap, obj: any) {
   if (map.has(obj)) {
     return map.get(obj);
   }
   return Infinity;
+}
+
+class MyWeakMap {
+  protected static instanceCount = 0;
+  private id = "weakmap" + MyWeakMap.instanceCount++;
+  set(obj: object, value: any) {
+    obj[this.id] = value;
+  }
+  get(obj: Object) {
+    return obj[this.id];
+  }
+  has(obj: Object) {
+    return obj[this.id] !== undefined;
+  }
+}
+
+class MySet<T> {
+  private record = {};
+  size = 0;
+  constructor(private getId: (t: T) => string, arr?: T[]) {
+    if (arr) {
+      const { record } = this;
+      arr.forEach((a, i) => (record[getId(a)] = a));
+      this.size = Object.keys(record).length;
+    }
+  }
+  has(item: T) {
+    return !!this.get(item);
+  }
+  get(item: T) {
+    return this.record[this.getId(item)];
+  }
+  add(item: T) {
+    if (!this.has(item)) {
+      this.size++;
+    }
+    this.record[this.getId(item)] = item;
+  }
+  delete(item: T) {
+    if (this.has(item)) {
+      this.size--;
+    }
+    delete this.record[this.getId(item)];
+  }
+  values() {
+    const { record } = this;
+    return Object.keys(record).map(k => record[k]);
+  }
+}
+
+function buildPath(
+  from: {
+    [key: string]: MazeUnit;
+  },
+  unit: MazeUnit
+) {
+  const path: MazeUnit[] = [unit];
+  while (unit) {
+    const parent = from[unit.id];
+    if (parent) {
+      path.push(parent);
+    }
+    unit = parent;
+  }
+  return path;
+}
+
+function cost(a: MazeUnit, b: MazeUnit) {
+  // chebyshev distance
+  return Math.abs(a.x - b.x) + Math.abs(a.y - b.y);
 }
 
 function getPath(
@@ -89,34 +161,18 @@ function getPath(
 ): MazeUnit[] {
   // a* here
 
-  function getId(unit: MazeUnit) {
-    return unit.x + ":" + unit.y;
-  }
+  const closedSet = new MySet<MazeUnit>(unit => unit.id);
+  const openSet = new MySet<MazeUnit>(unit => unit.id, [startPoint]);
+  const from: {
+    [key: string]: MazeUnit;
+  } = {};
+  const gScore = new MyWeakMap();
+  const fScore = new MyWeakMap();
 
-  const closedSet = new Set<MazeUnit>();
-  const openSet = new Set<MazeUnit>([startPoint]);
-  const from = new Map<string, MazeUnit>();
-  const gScore = new WeakMap<MazeUnit, number>();
-  const fScore = new WeakMap<MazeUnit, number>();
-  function cost(a: MazeUnit, b: MazeUnit) {
-    // chebyshev distance
-    return Math.abs(a.x - b.x) + Math.abs(a.y - b.y);
-  }
-  function buildPath(unit: MazeUnit) {
-    const path: MazeUnit[] = [unit];
-    while (unit) {
-      const parent = from[getId(unit)];
-      if (parent) {
-        path.push(parent);
-      }
-      unit = parent;
-    }
-    return path;
-  }
   gScore.set(startPoint, 0);
   fScore.set(startPoint, cost(startPoint, targetPoint));
   while (openSet.size !== 0) {
-    const openUnits = Array.from(openSet.values());
+    const openUnits = openSet.values();
     let current = openUnits[0];
     for (let i = 0, l = openUnits.length; i < l; i++) {
       const u = openUnits[i];
@@ -125,7 +181,7 @@ function getPath(
       }
     }
     if (current.i === targetPoint.i && current.j === targetPoint.j) {
-      return buildPath(current);
+      return buildPath(from, current);
     }
     openSet.delete(current);
     closedSet.add(current);
@@ -154,7 +210,7 @@ function getPath(
       if (tentasiveGScore >= mapGet(gScore, neighbor)) {
         return;
       }
-      from[getId(neighbor)] = current;
+      from[neighbor.id] = current;
       gScore.set(neighbor, tentasiveGScore);
       fScore.set(neighbor, gScore.get(neighbor) + cost(neighbor, targetPoint));
     });
